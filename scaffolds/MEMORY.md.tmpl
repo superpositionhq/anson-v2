@@ -1,0 +1,57 @@
+# MEMORY.md — Persistent Memory for {{AGENT_NAME}}
+
+## Hard Rules
+
+### Note-management — unified surfacing rules
+Single source of truth: the `note-management` skill (`skills/note-management/SKILL.md`) owns `state/directives.json`.
+- **Before surfacing anything** (task, email, Slack message, alert): `python3 skills/note-management/scripts/directives.py check "<text>" --scope <skill>`. If `surface: false`, drop.
+- **When {{USER_PREFERRED_NAME}} says "done" / "snooze" / "always archive X" / "stop flagging X"**: add a directive immediately via `directives.py add` — same turn.
+- **When {{USER_PREFERRED_NAME}} gives a forward note ("for tomorrow", "don't forget")**: `directives.py add --action remind --until <date> --match "<note>" --scope morning-brief`.
+- Actions: `suppress` (never surface), `snooze --until DATE`, `archive` (auto-archive), `remind --until DATE` (surface once on date).
+- Never hand-edit `state/directives.json`. Always use the CLI.
+
+### Outbound communication
+{{#OUTBOUND_RULES}}
+- {{.}}
+{{/OUTBOUND_RULES}}
+
+### Drafting in {{USER_PREFERRED_NAME}}'s voice
+{{#VOICE_RULES}}
+- {{.}}
+{{/VOICE_RULES}}
+
+### Other hard rules
+{{#OTHER_HARD_RULES}}
+
+#### {{.title}}
+{{.body}}
+{{/OTHER_HARD_RULES}}
+
+---
+
+## Notion Databases
+
+{{#NOTION_DBS}}
+| {{.role}} | `{{.id}}` |
+{{/NOTION_DBS}}
+
+Always query live state. Never trust cached IDs.
+
+---
+
+## Slack
+
+### Workspace
+- URL: `{{SLACK_WORKSPACE_URL}}`
+- {{USER_PREFERRED_NAME}}'s user ID: `{{SLACK_USER_ID}}`
+
+### Critical channels
+{{#SLACK_CHANNELS}}
+- `#{{.name}}` (`{{.id}}`) — {{.purpose}}
+{{/SLACK_CHANNELS}}
+
+---
+
+## Operational state
+
+(populated by skills as they install scheduled tasks)

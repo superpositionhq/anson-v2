@@ -1,0 +1,168 @@
+---
+name: note-management
+description: >
+  Sole owner of every "{{USER_PREFERRED_NAME}} told the agent to remember / forget X" path and
+  the lifecycle of the directive store (add / query / expire). Two input
+  surfaces into one store (`state/directives.json`):
+  (1) direct notes — "note this", "for tomorrow standup", "don't forget" —
+      captured as `remind` directives dated to the target brief;
+  (2) standing rules — "suppress", "snooze", "always archive" patterns —
+      written as `suppress` / `snooze` / `archive` directives consulted by
+      every surfacing skill before flagging.
+  Invoke immediately on any trigger, same turn, no waiting. Guarantees
+  principle 1 (direct commands and notes must never be lost) and
+  principle 2 (rules {{USER_PREFERRED_NAME}} sets are honored everywhere, not just
+  where they said them). Nightly: runs `directives.py expire` to drop past-date
+  snoozes and delivered reminds.
+---
+
+# Note Management
+
+Single source of truth for everything {{USER_PREFERRED_NAME}} tells the agent to remember — forward-looking notes ("for tomorrow") AND standing rules ("stop flagging Linear emails"). All entries live in `state/directives.json`. No parallel store, no drift.
+
+## Two surfaces, one store
+
+| Surface | Trigger | Action written |
+|---|---|---|
+| **Forward note** | "note this", "for tomorrow", "don't forget", "remind me", "add to standup" | `remind` with `until=<date>` |
+| **Standing rule** | "stop flagging X", "always archive Y", "X is done", "snooze X until Z" | `suppress` / `snooze` / `archive` |
+
+Both go through the same CLI. Both live in the same JSON array.
+
+## The directives store
+
+**Path**: `state/directives.json` (workspace root). Flat array of objects.
+
+```json
+[
+  {
+    "id": "stable-slug",
+    "action": "suppress" | "snooze" | "archive" | "remind",
+    "match": ["alias 1", "alias 2"],
+    "scope": ["morning-brief", "email-processing", "*"],
+    "until": "YYYY-MM-DD",
+    "note": "{{USER_PREFERRED_NAME}} context YYYY-MM-DD"
+  }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | stable slug, used for update/delete |
+| `action` | `suppress` (never surface), `snooze` (suppress until date), `archive` (auto-archive email/notification matching), `remind` (surface on date — forward notes) |
+| `match` | list of strings to fuzzy-match against item text (title, subject, sender, channel — all string values of the item joined) |
+| `scope` | list of skills this applies to; `["*"]` = all |
+| `until` | ISO date, required for `snooze` and `remind`, null otherwise |
+| `note` | source + reason, free-text |
+
+## Forward note flow
+
+Any message where {{USER_PREFERRED_NAME}} is handing off something to be remembered for a future Daily Brief or standup — even casual phrasings. Err on the side of capturing.
+
+**Trigger phrases (not exhaustive):**
+"note this" · "note that X" · "for tomorrow" · "for tomorrow standup" · "add to my daily brief" · "add to standup" · "mention this tomorrow" · "don't forget X" · "remind me about X" · "carry this forward" · "put this in tomorrow's brief" · "tell me in the morning" · "surface this tomorrow"
+
+**Not in scope:**
+- Task creation ("add a todo", "add to my shit list") → `task-manager`
+- Wiki / institutional knowledge ("document this", "save to wiki") → `superposition-wiki`
+- Profile updates ("remember this about me") → `profile-updater`
+
+If ambiguous, capture here and route later.
+
+**Mechanism** — same turn, no waiting. Single CLI call:
+
+```bash
+cd {{WORKSPACE_ROOT}} && python3 skills/note-management/scripts/directives.py add \
+  --action remind \
+  --until <YYYY-MM-DD> \
+  --match "<note text>" \
+  --scope morning-brief \
+  --note "captured $(date +%F)"
+```
+
+Pick `--until` based on {{USER_PREFERRED_NAME}}'s phrasing:
+- "for tomorrow" / "tomorrow standup" / default → tomorrow's date
+- "for today" / "today's brief" → today's date
+- Explicit date → that date
+
+Confirm with one line in chat. That's the whole capture flow.
+
+**Optional — patch already-rendered artifacts.** If the note is for TODAY and today's brief file (`archive/daily_schedules/daily_schedule_<today>.md`) already exists, append the note under a `## Notes from {{USER_PREFERRED_NAME}}` section. Same for the target standup file (`archive/standup_notes/standup_notes_<date>.md`) if present. Skip if the files don't exist — morning-brief will read the directive on next run.
+
+## Standing rule flow
+
+When {{USER_PREFERRED_NAME}} says "stop flagging X" / "always archive Y" / "X is done" / "snooze X until Z":
+```bash
+python3 skills/note-management/scripts/directives.py add \
+  --action suppress \
+  --match "<alias>" --match "<another alias>" \
+  --scope morning-brief \
+  --note "<{{USER_PREFERRED_NAME}} context — source date>"
+```
+
+For snooze: `--action snooze --until YYYY-MM-DD`.
+For archive: `--action archive` (email/notification sender-or-subject patterns; scope typically `email-processing`).
+
+Full CLI:
+```
+directives.py list [--scope X] [--action Y]
+directives.py check "<text>" [--scope X]
+directives.py add --action A --match "..." [--match ...] [--scope S] [--until DATE] --note "..."
+directives.py remove <id>
+directives.py expire            # drop past-date snoozes + remind
+directives.py reminders [--scope X]   # today's active remind directives
+```
+
+## For consumers (morning-brief, email-processing, slack-triage, heartbeat, ...)
+
+Before flagging any item, call:
+```bash
+python3 skills/note-management/scripts/directives.py check "<item text>" --scope <your-skill>
+```
+
+If `surface: false` → drop the item. Respect the action in the result.
+
+To fetch today's forward notes:
+```bash
+python3 skills/note-management/scripts/directives.py reminders --scope <your-skill>
+```
+
+Or from Python:
+```python
+import sys
+sys.path.insert(0, "skills/note-management/scripts")
+from directives import should_surface, reminders
+```
+
+## Matching
+
+Fuzzy: normalize (lowercase, strip non-alnum) + substring + token-set-ratio (threshold 0.6).
+
+Match strings can be UUIDs (exact), domains (substring), or phrases (fuzzy). Include whatever you want matched.
+
+## Lifecycle
+
+| Action | Auto-cleanup |
+|---|---|
+| `suppress` | Never — remove explicitly with `directives.py remove <id>` |
+| `snooze` | `expire` drops when `until <= today` (item resurfaces naturally if still open) |
+| `archive` | Never — remove explicitly |
+| `remind` | `expire` drops when `until < today` (one-shot delivery on the `until` date) |
+
+Nightly hygiene (default ~23:00 {{USER_TIMEZONE}}) runs `directives.py expire`.
+
+## Rules
+
+- **Never rely on chat memory alone.** Every note + rule writes to disk, same turn.
+- **Don't batch.** Each note captured as it is said.
+- **Don't editorialize.** Capture {{USER_PREFERRED_NAME}}'s words; don't summarize or polish.
+- **Surface capture failures.** If the helper errors, tell {{USER_PREFERRED_NAME}} immediately.
+- **Never hand-edit `state/directives.json`.** Use the CLI.
+
+## Hard rule reference
+
+This skill implements both the "Direct Note Capture" rule and the "Directives — unified surfacing rules" rule from `MEMORY.md`. If those files disagree, `MEMORY.md` wins.
+
+## Design note
+
+One skill owns every "X told the agent to remember/forget Y" surface: capture, query, expire. No companion skills. Consumers call `directives.py` directly.

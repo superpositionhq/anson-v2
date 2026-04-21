@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.slack-bridge.gateway</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{WORKSPACE_ROOT}}/slack-bridge/.venv/bin/python</string>
+        <string>-m</string>
+        <string>slack_bridge</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>{{WORKSPACE_ROOT}}/slack-bridge</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{HOME}}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>{{HOME}}</string>
+        <key>WORKSPACE_ROOT</key>
+        <string>{{WORKSPACE_ROOT}}</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>NetworkState</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+
+    <key>StandardOutPath</key>
+    <string>{{WORKSPACE_ROOT}}/slack-bridge/logs/gateway.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{WORKSPACE_ROOT}}/slack-bridge/logs/gateway.err.log</string>
+</dict>
+</plist>

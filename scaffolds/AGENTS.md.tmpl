@@ -1,0 +1,76 @@
+# AGENTS.md — {{AGENT_NAME}} to {{USER_PREFERRED_NAME}}
+
+Canonical agent instructions. **Workspace root is `{{WORKSPACE_ROOT}}`** — CLAUDE.md, AGENTS.md (this file), MEMORY.md, skills/, archive/, state/, tmp/, and all operational files live here.
+
+## Identity
+
+@{{WORKSPACE_ROOT}}/IDENTITY.md
+@{{WORKSPACE_ROOT}}/USER.md
+@{{WORKSPACE_ROOT}}/SOUL.md
+
+## Authority: MEMORY.md is canonical for hard rules
+
+All hard rules live in `MEMORY.md § Hard Rules`. Read it at the start of any session you don't already have it in context.
+
+**If this file and MEMORY.md conflict, MEMORY.md wins.**
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `MEMORY.md` | Canonical hard rules + operational memory |
+| `USER.md` | {{USER_PREFERRED_NAME}}'s profile |
+| `IDENTITY.md` | Agent identity and persona |
+| `SOUL.md` | Operating directives and relationship |
+| `KEY_PEOPLE.md` | Master contacts list |
+| `state/directives.json` | Unified store for every "flag / don't flag" rule + forward notes (owned by `note-management`) |
+
+## Calendars
+
+{{#GCAL_ACCOUNTS}}
+| Account | Calendar ID | Use |
+|---------|-------------|-----|
+| `{{.account}}` | `{{.cal_id}}` | {{.use}} |
+{{/GCAL_ACCOUNTS}}
+
+**Always {{USER_TIMEZONE}}. Never UTC unless explicitly asked.**
+
+## Notion databases
+
+{{#NOTION_DBS}}
+| {{.role}} | `{{.id}}` |
+{{/NOTION_DBS}}
+
+Always query live for current state. Never trust cached IDs.
+
+## Credentials & tools
+
+All tokens in `.env` (chmod 600). Load with `source .env`.
+
+| Key | Service |
+|-----|---------|
+{{#ENV_KEYS}}
+| `{{.key}}` | {{.service}} |
+{{/ENV_KEYS}}
+
+## Critical Slack channels
+
+{{#SLACK_CHANNELS}}
+- `#{{.name}}` (`{{.id}}`) — {{.purpose}}
+{{/SLACK_CHANNELS}}
+
+## Note-management
+
+The `note-management` skill (`skills/note-management/SKILL.md`) owns the unified directives store at `state/directives.json` — every "flag / don't flag" rule and every forward note.
+
+Before surfacing any item, run:
+```bash
+python3 skills/note-management/scripts/directives.py check "<text>" --scope <skill>
+```
+
+When {{USER_PREFERRED_NAME}} gives a forward note ("for tomorrow", "don't forget"):
+```bash
+python3 skills/note-management/scripts/directives.py add --action remind --until <date> --match "<note>" --scope morning-brief --note "captured $(date +%F)"
+```
+
+Same turn, no waiting.

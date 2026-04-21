@@ -1,0 +1,75 @@
+---
+name: email-triage
+description: >
+  Triage {{USER_PREFERRED_NAME}}'s Gmail across {{GMAIL_ACCOUNT_COUNT}} account(s).
+  Auto-archive noise, surface VIPs and action items. Used for heartbeat (last
+  hour) and ad-hoc time ranges. Triggers on: "process emails", "check inbox",
+  "email triage", "what's in my inbox".
+---
+
+# Email Triage
+
+Triage {{USER_PREFERRED_NAME}}'s inboxes. Surface only what matters; archive everything else silently.
+
+## Source-of-truth contract
+
+- Gmail live state is authoritative.
+- The `note-management` skill (`skills/note-management/SKILL.md`) owns suppression + auto-archive rules at `state/directives.json`. **Always consult before flagging or archiving.**
+
+## Accounts
+
+{{#GMAIL_ACCOUNTS}}
+- `{{.}}`
+{{/GMAIL_ACCOUNTS}}
+
+## Step 1 — Query
+
+```bash
+{{#GMAIL_ACCOUNTS}}
+gog -a {{.}} gmail list --unread --after "<YYYY/MM/DD>" --limit 50
+{{/GMAIL_ACCOUNTS}}
+```
+
+For heartbeat: `--after` = 1 hour ago.
+
+## Step 2 — Consult directives (every email)
+
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<from + subject + snippet>" --scope email-triage
+```
+
+- `action: archive` → archive silently.
+- `action: suppress` → don't surface, don't archive.
+- `surface: true` → continue to Step 3.
+
+## Step 3 — VIP check
+
+VIPs (from `KEY_PEOPLE.md`): always surface. For each:
+```
+**Sender (Company)** | what they want | suggested action | [→ email](link)
+```
+
+## Step 4 — Default categorization
+
+Anything not VIP and not directive-matched:
+- Newsletter → archive, optionally aggregate to digest
+- Promotional → archive
+- Personal-attention required → surface
+- Ambiguous → surface with `[?]` flag
+
+## Step 5 — Pattern stabilization
+
+When the same sender/subject pattern shows up 3+ times and gets archived, propose adding a directive:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py add \
+  --action archive \
+  --match "<sender or subject pattern>" \
+  --scope email-triage \
+  --note "auto-promoted YYYY-MM-DD from repeated archive"
+```
+
+Don't add automatically — surface the proposal to {{USER_PREFERRED_NAME}} for approval.
+
+## State
+
+`state/last_run.json` — `{"last_run_at": "ISO", "since": "ISO", "archived": N, "surfaced": N}`.

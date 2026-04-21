@@ -1,0 +1,55 @@
+---
+name: slack-triage
+description: >
+  Scan {{USER_PREFERRED_NAME}}'s critical Slack channels for items needing
+  attention. Read full threads before flagging. Triggers on: "check slack",
+  "slack triage", "what's in slack", or scheduled heartbeat scan.
+---
+
+# Slack Triage
+
+Read-only scan of critical channels. Surface unresolved items only.
+
+## Suppression
+
+Before flagging anything, consult the `note-management` skill:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<channel + message text>" --scope slack-triage
+```
+If `surface: false`, drop.
+
+## Critical channels
+
+{{#SLACK_CRITICAL_CHANNELS}}
+- `#{{.name}}` (`{{.id}}`) — {{.purpose}}
+{{/SLACK_CRITICAL_CHANNELS}}
+
+## Workflow
+
+1. For each critical channel, fetch messages since `state/last_ts.txt`.
+2. For each new message:
+   a. Read the **full thread** (`conversations.replies`).
+   b. If thread shows resolved → skip.
+   c. Run directives check.
+   d. If still flag-worthy → surface.
+3. Update `last_ts.txt` to the latest ts seen.
+
+## Surfacing format
+
+```
+• **#channel** — <one-line summary> — [→ thread](slack-link)
+```
+
+## Hard rules
+
+- **Never post as {{USER_PREFERRED_NAME}}** unless explicitly told this conversation.
+- **Always read full thread** before surfacing — surfacing a resolved thread wastes attention.
+- **No DM monitoring** unless added to critical channels list.
+
+## Tokens
+
+User session tokens in `.env`: `SLACK_XOXC_TOKEN` + `SLACK_XOXD_TOKEN`. Tokens expire ~30 days; refresh from DevTools when `invalid_auth` returns.
+
+## State
+
+- `state/last_ts.txt` — Slack ts of the last message processed.

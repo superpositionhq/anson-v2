@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""granola.py — read Granola meeting notes via local auth token.
+
+Auto-discovers the auth token from the Granola desktop app's local cache.
+No OAuth, no manual paste. Token rolls every few weeks; refresh by opening
+the Granola desktop app.
+
+Usage:
+  granola.py                              # last 30 docs (title + date)
+  granola.py --yesterday                  # full notes for yesterday
+  granola.py --today                      # full notes for today
+  granola.py --date YYYY-MM-DD            # specific date
+  granola.py --date YYYY-MM-DD YYYY-MM-DD # date range
+  granola.py --id <doc-id-prefix>         # one doc by ID
+  granola.py --search "keyword"           # title-keyword filter
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import requests
+
+API = "https://api.granola.ai/v2/get-documents"
+
+
+def token_path() -> Path:
+    sysname = platform.system()
+    if sysname == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Granola" / "supabase.json"
+    if sysname == "Windows":
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            sys.exit("APPDATA env var missing on Windows")
+        return Path(appdata) / "Granola" / "supabase.json"
+    sys.exit(f"granola: unsupported OS ({sysname}) — Granola desktop is macOS/Windows only")
+
+
+def load_token() -> str:
+    p = token_path()
+    if not p.exists():
+        sys.exit(f"Granola token cache not found at {p}. Install + sign in first.")
+    data = json.loads(p.read_text())
+    token = (data.get("workos_tokens") or {}).get("access_token")
+    if not token:
+        sys.exit("No workos_tokens.access_token — open the Granola desktop app to refresh.")
+    return token
+
+
+def fetch_docs(token: str, limit: int = 100) -> list[dict]:
+    out: list[dict] = []
+    offset = 0
+    while True:
+        r = requests.post(
+            API,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"limit": min(limit - len(out), 50), "offset": offset},
+            timeout=30,
+        )
+        if r.status_code in (401, 403):
+            sys.exit(f"Granola auth failed ({r.status_code}). Open the Granola app and retry.")
+        r.raise_for_status()
+        batch = r.json().get("docs") or []
+        out.extend(batch)
+        if not batch or len(out) >= limit:
+            break
+        offset += len(batch)
+    return out[:limit]
+
+
+def doc_date(d: dict) -> str:
+    return (d.get("created_at") or "")[:10]
+
+
+def filter_by_date(docs: list[dict], start: str, end: str) -> list[dict]:
+    return [d for d in docs if start <= doc_date(d) <= end]
+
+
+def render_summary(docs: list[dict]) -> None:
+    for d in docs:
+        title = d.get("title") or "(untitled)"
+        when = doc_date(d)
+        print(f"  {when}  {d.get('id', '')[:8]}  {title}")
+
+
+def render_full(docs: list[dict]) -> None:
+    for d in docs:
+        title = d.get("title") or "(untitled)"
+        when = doc_date(d)
+        people = ", ".join(p.get("name", "") for p in (d.get("people") or []))
+        notes = d.get("notes_plain") or ""
+        print(f"\n## {title}")
+        print(f"_{when} · {people}_\n")
+        print(notes.strip() or "_(no notes)_")
+        print()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--yesterday", action="store_true")
+    g.add_argument("--today", action="store_true")
+    g.add_argument("--date", nargs="+", help="YYYY-MM-DD or two dates for a range")
+    g.add_argument("--id", help="Document ID prefix (8+ chars)")
+    g.add_argument("--search", help="Title keyword filter")
+    args = ap.parse_args()
+
+    token = load_token()
+
+    if args.yesterday or args.today:
+        target = (date.today() - timedelta(days=1)).isoformat() if args.yesterday else date.today().isoformat()
+        docs = filter_by_date(fetch_docs(token, limit=100), target, target)
+        render_full(docs)
+        return 0
+
+    if args.date:
+        start = args.date[0]
+        end = args.date[1] if len(args.date) > 1 else start
+        docs = filter_by_date(fetch_docs(token, limit=200), start, end)
+        render_full(docs)
+        return 0
+
+    if args.id:
+        docs = [d for d in fetch_docs(token, limit=200) if d.get("id", "").startswith(args.id)]
+        render_full(docs)
+        return 0
+
+    if args.search:
+        needle = args.search.lower()
+        docs = [d for d in fetch_docs(token, limit=200) if needle in (d.get("title") or "").lower()]
+        render_summary(docs)
+        return 0
+
+    # default: last 30
+    render_summary(fetch_docs(token, limit=30))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+state/*.json
+state/*.jsonl
+state/outbox/
+logs/*.log
+config/allowlist.json
+config/policy.json
+!state/.gitkeep
+!logs/.gitkeep

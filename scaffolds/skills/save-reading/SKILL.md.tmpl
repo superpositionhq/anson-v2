@@ -1,0 +1,50 @@
+---
+name: save-reading
+description: >
+  Save an article, link, or document for {{USER_PREFERRED_NAME}} to read
+  later. Triggers on: "save this", "read later", "bookmark this",
+  "add to reading list".
+---
+
+# Save Reading
+
+Bookmark something for later, with enough context to find it again.
+
+## Workflow
+
+1. {{USER_PREFERRED_NAME}} drops a URL or asks to save context.
+2. Fetch the page, extract: title, author, source, ~3-line summary.
+3. Append to `state/reading_list.md` under `## To read`:
+   ```
+   - [ ] **Title** — Author / Source — captured YYYY-MM-DD
+     [link](URL)
+     <3-line summary>
+   ```
+4. Confirm with one line.
+
+## Reading list shape
+
+`state/reading_list.md`:
+
+```markdown
+# Reading List
+
+## To read
+<unread items, newest first>
+
+## Read
+<dated subsections of items {{USER_PREFERRED_NAME}} marked done>
+```
+
+## Marking done
+
+When {{USER_PREFERRED_NAME}} says "I read X" or marks `[x]`, move from `## To read` → `## Read` under today's date.
+
+## Optional integrations
+
+- If a Notion DB is configured for reading (asked during anson Stage D), also create a row there.
+- If `pocket-cli` or `instapaper` is installed, mirror to that service.
+
+## State
+
+`state/reading_list.md` — markdown, append-only.

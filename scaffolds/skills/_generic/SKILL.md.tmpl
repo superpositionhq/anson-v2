@@ -1,0 +1,63 @@
+---
+name: {{SKILL_NAME}}
+description: >
+  {{SKILL_DESCRIPTION}}
+  Triggers on: {{TRIGGER_PHRASES}}.
+---
+
+# {{SKILL_NAME}}
+
+{{SKILL_PURPOSE}}
+
+## Trigger
+
+{{TRIGGER_DESCRIPTION}}
+
+## Input
+
+{{INPUT_DESCRIPTION}}
+
+Source(s):
+{{#INPUT_SOURCES}}
+- {{.}}
+{{/INPUT_SOURCES}}
+
+## Workflow
+
+{{#WORKFLOW_STEPS}}
+{{.step_number}}. **{{.title}}** — {{.detail}}
+{{/WORKFLOW_STEPS}}
+
+## Suppression
+
+Before flagging or acting on items, consult the `note-management` skill:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<item text>" --scope {{SKILL_NAME}}
+```
+
+## Output
+
+{{OUTPUT_DESCRIPTION}}
+
+{{#IF_CONFIRMATION_GATE}}
+## Confirmation gate
+
+**{{CONFIRMATION_MODE}}** — {{CONFIRMATION_DETAIL}}
+
+Default: draft → confirm → execute. Never auto-send / auto-modify external state without {{USER_PREFERRED_NAME}}'s per-action approval, unless this skill is explicitly opted out of that rule by {{USER_PREFERRED_NAME}}.
+{{/IF_CONFIRMATION_GATE}}
+
+## State
+
+{{#STATE_FILES}}
+- `state/{{.filename}}` — {{.purpose}}
+{{/STATE_FILES}}
+
+## Schedule
+
+{{#IF_SCHEDULED}}
+Runs via scheduled task: **{{SCHEDULE_DESCRIPTION}}**.
+{{/IF_SCHEDULED}}
+{{^IF_SCHEDULED}}
+On-demand only — no scheduled task.
+{{/IF_SCHEDULED}}

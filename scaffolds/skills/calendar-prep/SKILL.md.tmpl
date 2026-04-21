@@ -1,0 +1,54 @@
+---
+name: calendar-prep
+description: >
+  Pre-meeting context pack for {{USER_PREFERRED_NAME}}'s upcoming events.
+  Pulls event details + attendee context + linked docs/tickets. Triggers on:
+  "prep my next meeting", "calendar prep", "what's next on my cal".
+---
+
+# Calendar Prep
+
+For each upcoming event in the next N hours, build a single-page context pack.
+
+## Source
+
+```bash
+{{#GCAL_ACCOUNTS}}
+gog -a {{.account}} calendar list --upcoming --hours <N>
+{{/GCAL_ACCOUNTS}}
+```
+
+## Per-event pack
+
+For each event:
+1. **Title + time + duration**
+2. **Attendees** — names, companies (look up via `KEY_PEOPLE.md` if known)
+3. **Description / agenda** — verbatim from event
+4. **Linked docs** — pull URLs from description; for Notion links, fetch page summary
+5. **Recent context** — last 3 emails from any attendee (if external) or last Slack thread mentioning the topic
+6. **Suggested talking points** — only if {{USER_PREFERRED_NAME}} asked for them; otherwise skip
+
+## Suppression
+
+For attendees flagged in directives (e.g. recurring meetings {{USER_PREFERRED_NAME}} no longer wants flagged):
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<event title + attendees>" --scope calendar-prep
+```
+
+## Output format
+
+```
+## <Event title> — <time> (<duration>)
+
+**Who**: <names>
+**Where**: <location or video link>
+**Agenda**: <one-line>
+
+**Context**:
+- <last relevant email/thread>
+- <linked doc summary>
+```
+
+## State
+
+`state/last_run.json` — `{"last_run_at": "ISO", "next_event_at": "ISO"}`.

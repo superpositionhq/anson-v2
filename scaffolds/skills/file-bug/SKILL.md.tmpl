@@ -1,0 +1,45 @@
+---
+name: file-bug
+description: >
+  File a bug report into {{BUG_TARGET}} from chat context. Dedup against
+  existing bugs first. Triggers on: "file a bug", "log this bug",
+  "ticket this", "create a bug for X".
+---
+
+# File Bug
+
+One bug per ticket. Dedup hard. Include source links.
+
+## Target
+
+{{#IF_NOTION_BUGS}}
+**Notion Bug Tracker DB**: `{{NOTION_BUG_DB_ID}}`
+{{/IF_NOTION_BUGS}}
+{{#IF_GITHUB_ISSUES}}
+**GitHub Issues**: `{{GITHUB_REPO}}`
+{{/IF_GITHUB_ISSUES}}
+
+## Workflow
+
+1. **Load existing bugs** (open + in-progress) into context. Do not query per-bug — load all upfront.
+2. **Dedup semantically.** If the new report matches an existing bug (same root cause, even if worded differently), add a comment to the existing one. **Do not file a duplicate.**
+3. **Confirm assignee** with {{USER_PREFERRED_NAME}} if non-obvious.
+4. **Build the ticket**:
+   - Title: one-line behavior summary
+   - Body: steps to reproduce, expected vs actual, source links (Slack thread, email, etc.)
+   - Severity: P0 / P1 / P2 / P3
+5. **File**.
+6. **Confirm** with one-line in chat: ticket URL + title.
+
+## Hard rules
+
+- **Never file without source links.** A ticket without context is wrong.
+- **Skip auto-filed bugs** (anything posted by automation pipelines, MCP bots, or other bots) — those usually already exist as tickets.
+- **Dedup is semantic, not exact-match.** When in doubt, comment on the existing bug.
+
+## Suppression
+
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<bug summary>" --scope file-bug
+```
+If matched (e.g. {{USER_PREFERRED_NAME}} flagged this as not-a-bug), don't file.

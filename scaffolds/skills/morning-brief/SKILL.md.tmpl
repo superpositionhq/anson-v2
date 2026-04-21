@@ -1,0 +1,74 @@
+---
+name: morning-brief
+description: >
+  Morning briefing for {{USER_PREFERRED_NAME}}. Pulls today's calendar,
+  open tasks, overnight unread emails{{#IF_SLACK}}, and Slack highlights{{/IF_SLACK}}
+  into one scannable summary. Triggers on: "morning brief", "good morning",
+  "what's on today", or the {{MORNING_BRIEF_TIME}} scheduled task.
+---
+
+# Morning Brief
+
+Deliver a scannable morning briefing. {{USER_PREFERRED_NAME}} reads it once and knows what the day looks like.
+
+## Suppression + forward notes
+
+Before flagging any item, consult the `note-management` directive store:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<item text>" --scope morning-brief
+```
+Drop items where `surface: false`.
+
+Pull today's forward notes ("for today" reminders {{USER_PREFERRED_NAME}} captured earlier):
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py reminders --scope morning-brief
+```
+Incorporate them into the brief.
+
+## Data (fetch in parallel)
+
+**Calendar**
+```bash
+{{#GMAIL_ACCOUNTS}}gog -a {{.}} calendar list --today
+{{/GMAIL_ACCOUNTS}}
+```
+
+**Open tasks** — Notion DB `{{NOTION_TASKS_DB_ID}}`, filter Status ≠ Done.
+
+**Emails** — unread, last 24h:
+```bash
+{{#GMAIL_ACCOUNTS}}gog -a {{.}} gmail messages search 'is:unread newer_than:1d' --limit 30 --json
+{{/GMAIL_ACCOUNTS}}
+```
+
+{{#IF_SLACK}}
+**Slack** — last 8h in critical channels:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/morning-brief/scripts/slack_overnight.py --channels "{{SLACK_CRITICAL_CHANNELS}}"
+```
+{{/IF_SLACK}}
+
+## Output
+
+Print inline. Skip any empty section.
+
+```
+🌅 Good morning {{USER_PREFERRED_NAME}}
+
+📅 CALENDAR
+• [time] — [event]
+
+✅ TASKS
+• [top-priority open task]
+
+📧 EMAILS
+• **Sender** — subject — action
+
+{{#IF_SLACK}}🚨 SLACK
+• **#channel** — summary
+{{/IF_SLACK}}
+```
+
+## State
+
+`state/last_run_date.txt` — YYYY-MM-DD of last run. Skip if matches today.

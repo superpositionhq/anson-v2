@@ -1,0 +1,79 @@
+---
+name: granola-digest
+description: >
+  Pull recent Granola meeting notes and produce a scannable digest for
+  {{USER_PREFERRED_NAME}}. Used standalone ("show me yesterday's meetings") or
+  as a feed source for the morning brief. Triggers on: "granola digest",
+  "yesterday's meetings", "show meeting notes", "what did I discuss in
+  <meeting>", "summarize last week's meetings".
+---
+
+# Granola Digest
+
+Read recent Granola meeting notes; surface decisions, action items, attendees, and unresolved threads.
+
+## Source
+
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/granola-digest/scripts/granola.py [flags]
+```
+
+| Flag | Purpose |
+|---|---|
+| *(none)* | List last 30 docs (title + date) |
+| `--yesterday` | Full notes for yesterday — used by morning brief |
+| `--today` | Full notes for today |
+| `--date YYYY-MM-DD` | Notes for a specific date |
+| `--date YYYY-MM-DD YYYY-MM-DD` | Notes in a date range |
+| `--id <doc-id-prefix>` | Single doc by ID (8+ chars) |
+| `--search "keyword"` | Filter by title keyword |
+
+Auth: token auto-discovered from `~/Library/Application Support/Granola/supabase.json` (macOS) or `%APPDATA%\Granola\supabase.json` (Windows). If 401/403 → user opens the Granola desktop app to refresh, then retry.
+
+## Suppression
+
+Before flagging meeting items as needing attention, consult the `note-management` skill:
+```bash
+python3 {{WORKSPACE_ROOT}}/skills/note-management/scripts/directives.py check "<meeting title + summary>" --scope granola-digest
+```
+
+## Workflow — `--yesterday` (morning-brief feed)
+
+1. Pull yesterday's docs.
+2. For each doc, extract:
+   - **Title** (Granola AI title or linked calendar event)
+   - **Attendees** (cross-ref `KEY_PEOPLE.md` for context)
+   - **Decisions made** (lines that read like commitments)
+   - **Action items** (especially anything assigned to {{USER_PREFERRED_NAME}})
+   - **Unresolved threads** (open questions, blockers)
+3. Skip empty docs silently.
+4. Output digest format:
+   ```
+   ## 📝 Yesterday's Meetings
+
+   • **<Meeting title>** — <attendees>
+     decisions: <one-line>
+     todos: <one-line — esp. assigned to {{USER_PREFERRED_NAME}}>
+     open: <one-line, only if unresolved>
+   ```
+
+## Workflow — ad-hoc query
+
+When {{USER_PREFERRED_NAME}} asks "what did I discuss about X" or "summarize the meeting with Y":
+1. Use `--search` to narrow.
+2. Pull full `notes_plain` for matching docs.
+3. Reflect back the relevant content verbatim where possible — don't editorialize {{USER_PREFERRED_NAME}}'s own meeting notes.
+
+## Hard rules
+
+- **Transcripts are NOT stored** server-side. Only post-call notes are accessible. Don't claim to have transcript access.
+- **Skip meetings without notes.** Empty docs add noise.
+- **Cross-ref `KEY_PEOPLE.md`** for attendee context — don't re-introduce people {{USER_PREFERRED_NAME}} already knows by name.
+
+## State
+
+`state/last_run.json` — `{"last_run_at": "ISO", "last_doc_seen": "<id>", "docs_processed": N}`
+
+## Schedule
+
+Optional. If installed as a scheduled task, runs once per morning before `morning-brief` so its output is available as input. Otherwise on-demand only.
