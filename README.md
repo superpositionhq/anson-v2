@@ -18,13 +18,25 @@ This stack is what runs day-to-day for the founder it was built around — every
 
 ## Install
 
-```bash
-git clone https://github.com/superpositionhq/anson-v2 ~/.claude/skills/anson
+**Via Claude Code plugin (recommended)**:
+
+```
+/plugin install superpositionhq/anson-v2
 ```
 
 Then in your agent:
 
 > Run anson
+
+**Or clone manually as a skill**:
+
+```bash
+git clone https://github.com/superpositionhq/anson-v2 ~/.claude/skills/anson-v2
+# the skill lives at skills/anson/SKILL.md inside the repo;
+# the plugin layout works whether cloned as a skill or installed as a plugin.
+```
+
+Then `> Run anson`.
 
 That's it. Anson handles the rest — step by step, one question at a time, resumable if you get interrupted.
 

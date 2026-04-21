@@ -1,0 +1,23 @@
+{
+  "name": "anson",
+  "version": "2.0.0",
+  "description": "Battle-tested coworker setup for Claude Code · Slack · Notion · Gmail · Granola. Bootstrap a working AI coworker by interview.",
+  "author": {
+    "name": "Superposition",
+    "url": "https://superposition.ai"
+  },
+  "homepage": "https://github.com/superpositionhq/anson-v2",
+  "repository": "https://github.com/superpositionhq/anson-v2",
+  "license": "MIT",
+  "keywords": [
+    "ai-coworker",
+    "claude-code",
+    "bootstrap",
+    "slack",
+    "notion",
+    "gmail",
+    "granola",
+    "skill-installer",
+    "interview"
+  ]
+}
