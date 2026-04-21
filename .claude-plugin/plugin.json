@@ -1,7 +1,7 @@
 {
   "name": "anson",
   "version": "2.0.0",
-  "description": "Battle-tested coworker setup for Claude Code · Slack · Notion · Gmail · Granola. Bootstrap a working AI coworker by interview.",
+  "description": "Opinionated coworker setup for Claude Code · Slack · Notion · Gmail · Granola. Bootstrap a working AI coworker by interview.",
   "author": {
     "name": "Superposition",
     "url": "https://superposition.ai"

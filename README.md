@@ -1,6 +1,6 @@
 # Anson v2
 
-**Battle-tested coworker setup for Claude Code · Slack · Notion · Gmail · Granola.**
+**Opinionated coworker setup for Claude Code · Slack · Notion · Gmail · Granola.**
 
 Bootstrap a working AI coworker end-to-end, by interview.
 
@@ -14,7 +14,7 @@ Anson v1 wrote your identity docs. **v2 installs the whole coworker**: identity 
 - **Two-way Slack coworker (optional)** — DM the agent from your phone, get replies in thread
 - **Your own workflows** — describe any automation in plain English; Anson generates a skill, dry-runs it on your real data, and installs it if you approve
 
-This stack is what runs day-to-day for the founder it was built around — every skill, every directive pattern, every cleanup hook has hit production. Strangers get the same battle-tested core, customized to *their* identity and workflow.
+Opinionated by default. Every choice reflects what's actually worked in production for the founder it was built around. You can override anything later, but anson picks first so you're not making 30 micro-decisions to get to a baseline. Strangers get the same core, customized to *their* identity and workflow.
 
 ## Install
 
