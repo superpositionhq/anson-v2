@@ -52,10 +52,13 @@ def run_claude(
     session_id: str,
     is_new_session: bool,
     session_label: str | None = None,
+    system_append: str | None = None,
 ) -> DispatchResult:
     """Run one turn. On `--resume` failure against a missing session,
     returns `session_orphaned=True`; caller rotates + retries as new."""
     cmd = [claude_bin, "-p", prompt, "--output-format", "text"]
+    if system_append:
+        cmd += ["--append-system-prompt", system_append]
     if is_new_session:
         cmd += ["--session-id", session_id]
         if session_label:
@@ -76,7 +79,7 @@ def run_claude(
             cwd=str(workspace),
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=timeout if timeout and timeout > 0 else None,
             check=False,
         )
     except subprocess.TimeoutExpired:

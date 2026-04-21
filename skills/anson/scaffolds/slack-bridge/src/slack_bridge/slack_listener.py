@@ -7,6 +7,7 @@ session file. Different conversations run concurrently.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections import defaultdict
 from dataclasses import dataclass
@@ -19,17 +20,43 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web import WebClient
 
-ACK_EMOJI = "eyes"
-
 from .config import Config
 from .delivery import DeliveryQueue, PostTarget
 from .dispatch import run_claude
 from .pairing import REJECTION_TEXT, load_allowlist
 from .session_visibility import unhide_session
 from .sessions import Scope, SessionStore
-from .thread_context import META_SUBTYPES, fetch_dm_history, fetch_thread, format_preamble
+from .thread_context import (
+    META_SUBTYPES,
+    ChannelInfo,
+    fetch_channel_info,
+    fetch_dm_history,
+    fetch_thread,
+    fetch_user_names,
+    format_preamble,
+    render_user,
+)
 
 log = logging.getLogger(__name__)
+
+ACK_EMOJI = "eyes"
+
+# Opt-in reply protocol: agent wraps any Slack-bound text in
+# <slack_reply>...</slack_reply>; anything outside the tag stays private.
+REPLY_TAG_RE = re.compile(r"<slack_reply>(.*?)</slack_reply>", re.DOTALL)
+
+REPLY_CONTRACT = (
+    "You are responding inside a Slack bridge. The user sees NOTHING you write "
+    "unless wrapped in a <slack_reply>...</slack_reply> XML block; anything "
+    "outside is private reasoning and discarded. To stay silent, produce no "
+    "<slack_reply> block. To reply, emit one <slack_reply> block containing "
+    "only the text to post (Slack mrkdwn supported); multiple blocks are "
+    "joined with a blank line. Never explain the protocol to the user."
+)
+
+
+def _extract_replies(text: str) -> list[str]:
+    return [m.group(1).strip() for m in REPLY_TAG_RE.finditer(text or "") if m.group(1).strip()]
 
 
 @dataclass(frozen=True)
@@ -89,10 +116,38 @@ class Bridge:
         # One lock per session key — different conversations still parallelize.
         self._session_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
         self._locks_mutex = threading.Lock()
+        # Process-lifetime caches; display names / channel metadata change
+        # rarely enough that a bridge restart is acceptable cache invalidation.
+        self._user_name_cache: dict[str, str] = {}
+        self._channel_info_cache: dict[str, ChannelInfo] = {}
+        self._metadata_lock = threading.Lock()
 
     def _lock_for(self, key: str) -> threading.Lock:
         with self._locks_mutex:
             return self._session_locks[key]
+
+    def _cached_channel_info(self, channel: str) -> ChannelInfo | None:
+        with self._metadata_lock:
+            hit = self._channel_info_cache.get(channel)
+        if hit is not None:
+            return hit
+        info = fetch_channel_info(self.web, channel=channel)
+        if info is not None:
+            with self._metadata_lock:
+                self._channel_info_cache[channel] = info
+        return info
+
+    def _cached_user_names(self, user_ids: list[str]) -> dict[str, str]:
+        with self._metadata_lock:
+            resolved = {uid: self._user_name_cache[uid] for uid in user_ids if uid in self._user_name_cache}
+            missing = [uid for uid in user_ids if uid not in self._user_name_cache]
+        if missing:
+            fetched = fetch_user_names(self.web, missing)
+            if fetched:
+                with self._metadata_lock:
+                    self._user_name_cache.update(fetched)
+            resolved.update(fetched)
+        return resolved
 
     def handle(self, req: SocketModeRequest) -> None:
         if req.type != "events_api":
@@ -224,21 +279,39 @@ class Bridge:
                     thread_ts=msg.thread_ts or "", exclude_ts=msg.ts,
                 )
             )
-            preamble = format_preamble(history, bot_user_id=self.bot_user_id)
+            channel_info = self._cached_channel_info(msg.channel)
+            user_ids = [m.user for m in history if not m.is_bot]
+            user_ids.append(msg.user_id)
+            user_names = self._cached_user_names(user_ids)
+            preamble = format_preamble(
+                history,
+                bot_user_id=self.bot_user_id,
+                channel_info=channel_info,
+                thread_ts=msg.thread_ts,
+                user_names=user_names,
+            )
             if preamble:
-                prompt = f"{preamble}\n\n[Current message from <@{msg.user_id}>]\n{msg.text}"
+                sender = render_user(
+                    msg.user_id, bot_user_id=self.bot_user_id,
+                    is_bot=False, names=user_names,
+                )
+                prompt = f"{preamble}\n\n[Current message from {sender}]\n{msg.text}"
 
         label = _session_label(msg)
-        result = run_claude(
-            prompt=prompt,
-            workspace=self.config.workspace,
-            claude_bin=self.config.claude_bin,
-            timeout=self.config.claude_timeout,
-            session_id=session.claude_session_id,
-            is_new_session=is_new,
-            session_label=label,
-        )
 
+        def _invoke(sid: str, new: bool) -> Any:
+            return run_claude(
+                prompt=prompt,
+                workspace=self.config.workspace,
+                claude_bin=self.config.claude_bin,
+                timeout=self.config.claude_timeout,
+                session_id=sid,
+                is_new_session=new,
+                session_label=label,
+                system_append=REPLY_CONTRACT,
+            )
+
+        result = _invoke(session.claude_session_id, is_new)
         if result.session_orphaned:
             log.warning(
                 "orphan session %s for %s — rotating + retry",
@@ -246,26 +319,29 @@ class Bridge:
             )
             rotated = self.store.rotate(session_key)
             if rotated is not None:
-                result = run_claude(
-                    prompt=prompt,
-                    workspace=self.config.workspace,
-                    claude_bin=self.config.claude_bin,
-                    timeout=self.config.claude_timeout,
-                    session_id=rotated.claude_session_id,
-                    is_new_session=True,
-                    session_label=label,
-                )
+                result = _invoke(rotated.claude_session_id, True)
 
-        reply = result.text if result.ok else f"⚠️ {result.text}"
-        self.queue.try_post(target, reply)
-        if result.ok:
-            self.store.touch(session_key)
-            current = self.store.get(session_key)
-            effective_id = current.claude_session_id if current else session.claude_session_id
-            try:
-                unhide_session(self.config.workspace, effective_id)
-            except Exception:
-                log.exception("session_visibility unhide failed")
+        if not result.ok:
+            # Surface agent errors to Slack so failures aren't silent.
+            self.queue.try_post(target, f"⚠️ {result.text}")
+            return
+
+        replies = _extract_replies(result.text)
+        if replies:
+            self.queue.try_post(target, "\n\n".join(replies))
+        else:
+            log.info(
+                "silent turn: no <slack_reply> block from agent (key=%s, %d chars stdout)",
+                session_key, len(result.text),
+            )
+
+        self.store.touch(session_key)
+        current = self.store.get(session_key)
+        effective_id = current.claude_session_id if current else session.claude_session_id
+        try:
+            unhide_session(self.config.workspace, effective_id)
+        except Exception:
+            log.exception("session_visibility unhide failed")
 
 
 def run(config: Config, shutdown: threading.Event) -> None:
