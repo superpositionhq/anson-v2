@@ -6,6 +6,7 @@ session is alive, `--resume` carries its own memory.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Literal
 
@@ -105,34 +106,38 @@ def fetch_dm_history(
     return _to_thread_messages(list(reversed(resp.get("messages") or [])), exclude_ts)
 
 
+def _lookup_user_name(web: WebClient, uid: str) -> tuple[str, str | None]:
+    try:
+        resp = web.users_info(user=uid)
+    except SlackApiError as e:
+        log.warning("users.info(%s) failed: %s", uid, e.response.get("error"))
+        return uid, None
+    user = resp.get("user") or {}
+    profile = user.get("profile") or {}
+    name = (
+        profile.get("display_name")
+        or profile.get("real_name")
+        or user.get("real_name")
+        or user.get("name")
+        or ""
+    ).strip()
+    return uid, name or None
+
+
 def fetch_user_names(web: WebClient, user_ids: list[str]) -> dict[str, str]:
-    """Resolve Slack user IDs → display names. Bot IDs are skipped.
+    """Resolve Slack user IDs → display names in parallel. Bot IDs are skipped.
 
     Best-effort: on API failure, the ID is dropped from the map and callers
     fall back to rendering `<@U123>`.
     """
+    unique = [uid for uid in dict.fromkeys(user_ids) if uid and uid.startswith("U")]
+    if not unique:
+        return {}
     out: dict[str, str] = {}
-    seen: set[str] = set()
-    for uid in user_ids:
-        if not uid or not uid.startswith("U") or uid in seen:
-            continue
-        seen.add(uid)
-        try:
-            resp = web.users_info(user=uid)
-        except SlackApiError as e:
-            log.warning("users.info(%s) failed: %s", uid, e.response.get("error"))
-            continue
-        user = resp.get("user") or {}
-        profile = user.get("profile") or {}
-        name = (
-            profile.get("display_name")
-            or profile.get("real_name")
-            or user.get("real_name")
-            or user.get("name")
-            or ""
-        ).strip()
-        if name:
-            out[uid] = name
+    with ThreadPoolExecutor(max_workers=min(8, len(unique))) as pool:
+        for uid, name in pool.map(lambda u: _lookup_user_name(web, u), unique):
+            if name:
+                out[uid] = name
     return out
 
 

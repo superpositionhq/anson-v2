@@ -150,11 +150,6 @@ class SessionStore:
             s.turns += 1
             self._persist()
 
-    def drop(self, key: str) -> None:
-        with self._lock:
-            if self._sessions.pop(key, None):
-                self._persist()
-
     def rotate(self, key: str) -> Session | None:
         """Swap in a fresh UUID for an existing key (orphan recovery).
         Keeps metadata but resets the turn counter."""

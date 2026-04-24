@@ -152,6 +152,14 @@ class Bridge:
     def handle(self, req: SocketModeRequest) -> None:
         if req.type != "events_api":
             return
+        # Slack re-delivers events on transient disconnect; skip retries so we
+        # don't double-dispatch to Claude. We already ack'd envelope_id in on_request.
+        if req.retry_attempt:
+            log.info(
+                "skipping retry delivery (attempt=%s reason=%s)",
+                req.retry_attempt, req.retry_reason,
+            )
+            return
         event = req.payload.get("event") or {}
         etype = event.get("type")
 
@@ -269,7 +277,17 @@ class Bridge:
             "NEW" if is_new else f"resume({session.turns} prior)",
         )
 
-        prompt = msg.text
+        # Authorship is driven by the Slack event payload's user_id, which
+        # the agent can trust. Tagging every turn (not just the first)
+        # stops impersonation attempts via message-body claims.
+        sender_names = self._cached_user_names([msg.user_id])
+        sender = render_user(
+            msg.user_id, bot_user_id=self.bot_user_id,
+            is_bot=False, names=sender_names,
+        )
+        sender_line = f"[Current message from {sender} · slack_user_id={msg.user_id}]"
+
+        prompt = f"{sender_line}\n{msg.text}"
         if is_new:
             history = (
                 fetch_dm_history(self.web, channel=msg.channel, exclude_ts=msg.ts)
@@ -291,11 +309,7 @@ class Bridge:
                 user_names=user_names,
             )
             if preamble:
-                sender = render_user(
-                    msg.user_id, bot_user_id=self.bot_user_id,
-                    is_bot=False, names=user_names,
-                )
-                prompt = f"{preamble}\n\n[Current message from {sender}]\n{msg.text}"
+                prompt = f"{preamble}\n\n{sender_line}\n{msg.text}"
 
         label = _session_label(msg)
 

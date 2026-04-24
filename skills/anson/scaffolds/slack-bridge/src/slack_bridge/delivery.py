@@ -64,7 +64,7 @@ class OutboxEntry:
     next_attempt_at: str
 
 
-def _split(text: str, n: int = CHUNK) -> list[str]:
+def split_chunks(text: str, n: int = CHUNK) -> list[str]:
     """Split on paragraph then line boundary so code fences survive."""
     if len(text) <= n:
         return [text]
@@ -118,7 +118,7 @@ class DeliveryQueue:
         if not text.strip():
             return True
 
-        chunks = _split(text)
+        chunks = split_chunks(text)
         sent = 0
         last_error: str | None = None
 

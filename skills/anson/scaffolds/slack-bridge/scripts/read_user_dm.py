@@ -25,14 +25,16 @@ import argparse
 import os
 import sys
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dotenv import load_dotenv
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web import WebClient
 
+from slack_bridge._io import load_bot_token, open_dm
+
+
 def _default_env() -> str:
-    from pathlib import Path
     root = os.environ.get("WORKSPACE_ROOT")
     if root:
         return str(Path(root).expanduser() / ".env")
@@ -51,10 +53,10 @@ def main() -> int:
     ap.add_argument("--env-file", default=DEFAULT_ENV)
     args = ap.parse_args()
 
-    load_dotenv(args.env_file, override=False)
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if not token.startswith("xoxb-"):
-        print("read_user_dm: SLACK_BOT_TOKEN missing", file=sys.stderr)
+    try:
+        token = load_bot_token(args.env_file)
+    except ValueError as e:
+        print(f"read_user_dm: {e}", file=sys.stderr)
         return 2
 
     web = WebClient(token=token)
@@ -66,7 +68,7 @@ def main() -> int:
         return 1
 
     try:
-        channel = web.conversations_open(users=args.user)["channel"]["id"]
+        channel = open_dm(web, args.user)
     except SlackApiError as e:
         print(f"read_user_dm: conversations.open failed: {e.response.get('error')}", file=sys.stderr)
         return 1
